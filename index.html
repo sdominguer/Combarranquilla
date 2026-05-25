@@ -1,0 +1,1042 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plantilla Workshop Innovación — Combarranquilla · PLYNN</title>
+  <meta name="description" content="Plantilla digital del Workshop de Innovación de PLYNN para Combarranquilla.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚀</text></svg>">
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=Caveat:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, #root { height: 100%; width: 100%; overflow: hidden; }
+    body { font-family: 'Montserrat', sans-serif; }
+    input:focus, textarea:focus, select:focus { border-color: #E8432F !important; outline: none; }
+    button:hover { opacity: 0.9; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+    @media (max-width: 768px) {
+      aside { position: fixed !important; transform: translateX(-100%) !important; z-index: 100 !important; }
+      aside.open { transform: translateX(0) !important; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" onerror="console.warn('html2pdf no disponible')"></script>
+
+  <script type="text/babel" data-type="module">
+const { useState, useEffect, useCallback, useRef } = React;
+
+// ============================================================
+// ⚠️  CAMBIAR POR LA URL DEL APPS SCRIPT DE COMBARRANQUILLA
+// ============================================================
+const APPS_SCRIPT_URL = "TU_URL_DE_APPS_SCRIPT_AQUI";
+
+async function apiCall(action, params = {}) {
+  const USE_LOCAL = !APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes("TU_URL");
+  const BACKEND_ACTIONS = ["login", "register", "save", "load", "resetPassword", "verifyCode", "updatePassword"];
+  const POST_ACTIONS = ["save", "register", "resetPassword", "verifyCode", "updatePassword"];
+
+  if (!USE_LOCAL && BACKEND_ACTIONS.includes(action)) {
+    try {
+      let result;
+      if (POST_ACTIONS.includes(action)) {
+        const formData = new URLSearchParams();
+        formData.append("action", action);
+        for (const [key, val] of Object.entries(params)) {
+          if (key === "datos") formData.append("payload", JSON.stringify(val));
+          else formData.append(key, val);
+        }
+        const res = await fetch(APPS_SCRIPT_URL, { method: "POST", body: formData, headers: { "Content-Type": "application/x-www-form-urlencoded" } });
+        result = await res.json();
+      } else {
+        let url = APPS_SCRIPT_URL + "?action=" + encodeURIComponent(action);
+        for (const [key, val] of Object.entries(params)) url += "&" + encodeURIComponent(key) + "=" + encodeURIComponent(val);
+        const res = await fetch(url);
+        result = await res.json();
+      }
+      if (action === "save" && result.success) { try { localStorage.setItem(STORAGE_KEY + "_" + params.empresa, JSON.stringify(params.datos || {})); } catch(e){} }
+      if (action === "load" && result.success && result.datos) { try { localStorage.setItem(STORAGE_KEY + "_" + params.empresa, JSON.stringify(result.datos)); } catch(e){} }
+      return result;
+    } catch (e) {
+      console.error("API error:", e);
+      if (action === "load") { try { const raw = localStorage.getItem(STORAGE_KEY + "_" + params.empresa); if (raw) return { success: true, datos: JSON.parse(raw), fromLocal: true }; } catch(le){} }
+      if (action === "save") { try { localStorage.setItem(STORAGE_KEY + "_" + params.empresa, JSON.stringify(params.datos)); } catch(le){} return { success: false, error: "Sin conexión. Guardado local." }; }
+      if (action === "resetPassword" || action === "verifyCode") return { success: false, error: "Sin conexión al servidor." };
+    }
+  }
+
+  // Fallback local
+  if (action === "login") { const s = localStorage.getItem("user_" + params.empresa); if (!s) return { success: false, error: "Empresa no registrada." }; const u = JSON.parse(s); if (u.password !== params.password) return { success: false, error: "Contraseña incorrecta." }; return { success: true, empresa: params.empresa }; }
+  if (action === "register") { if (localStorage.getItem("user_" + params.empresa)) return { success: false, error: "Ya registrada." }; localStorage.setItem("user_" + params.empresa, JSON.stringify({ password: params.password, email: params.email || "" })); return { success: true }; }
+  if (action === "load") { const raw = localStorage.getItem(STORAGE_KEY + "_" + params.empresa); if (raw) return { success: true, datos: JSON.parse(raw) }; return { success: true, datos: {} }; }
+  if (action === "save") { try { localStorage.setItem(STORAGE_KEY + "_" + params.empresa, JSON.stringify(params.datos)); } catch(e){} return { success: true }; }
+  if (action === "resetPassword") return { success: false, error: "Requiere conexión al servidor." };
+  if (action === "verifyCode") return { success: false, error: "Requiere conexión al servidor." };
+  return { success: true };
+}
+
+// ============================================================
+// THEME — Combarranquilla
+// ============================================================
+const C = {
+  primary: "#1B3A5C", accent: "#E8432F", yellow: "#F5A623", green: "#34C759",
+  red: "#E53935", white: "#FFFFFF", cream: "#F5F7FA", lightAccent: "#FDE8E5",
+  darkPrimary: "#142D47", gray: "#6B7280", lightGray: "#E5E7EB", border: "#D1D5DB",
+  cyan: "#00A0B0",
+};
+
+const STORAGE_KEY = "combarranquilla-workshop";
+
+const DEFAULT_DATA = {
+  empresa: { nombre: "", fecha: "" },
+  comite: [{ departamento: "", nombre: "" }],
+  liderInnovacion: "",
+  organigramaLink: "",
+  acta: {
+    fecha: "", hora: "", lugar: "", empresa: "",
+    asistentes: [{ nombre: "", cargo: "" }, { nombre: "", cargo: "" }, { nombre: "", cargo: "" }],
+    periodicidad: "mensual", compromisos: "",
+  },
+  canvas: {
+    propuestaValor: "", clientes: "", relacionClientes: "",
+    canales: "", actividadesClaves: "", recursosClaves: "",
+    partners: "", estructuraCostos: "", fuentesIngreso: "",
+  },
+  focos: [
+    { tipo: "Innovación Producto/servicio", porcentaje: "" },
+    { tipo: "Innovación Proceso", porcentaje: "" },
+    { tipo: "Innovación Marketing", porcentaje: "" },
+    { tipo: "Innovación Organizacional", porcentaje: "" },
+    { tipo: "Innovación Modelo de negocio", porcentaje: "" },
+  ],
+  objetivosEstrategicos: "",
+  objetivosInnovacion: "",
+  estrategiaInnovacion: "",
+  recursosEstrategia: "",
+  retosInternos: [],
+  retosExternos: [],
+  linkPriorizacionRetos: "",
+  retoContinua: "",
+  retoContinuaTipo: "necesidad",
+  ideasLluvia: [],
+  ideaContinua: "",
+  ideaContinuaTipo: "necesidad",
+  linkVT: "",
+  linkPMV: "",
+  preguntasValidacion: [{ pregunta: "" }, { pregunta: "" }, { pregunta: "" }, { pregunta: "" }, { pregunta: "" }],
+  lastSaved: null,
+};
+
+const TALLERES = [
+  {
+    id: 0, titulo: "Datos de la Empresa", icon: "🏢", color: C.primary, dia: 1,
+    intro: "Antes de empezar, diligencia el nombre de tu empresa y la fecha del workshop.",
+    actividades: [{ id: "datos", titulo: "Datos Básicos", desc: "Nombre y fecha." }]
+  },
+  {
+    id: 1, titulo: "Comité de Innovación", icon: "👥", color: C.accent, dia: 1,
+    intro: "Crea el equipo de innovación: comité, organigrama, líder y acta de inicio.",
+    actividades: [
+      { id: "comite", titulo: "Crear el Comité", desc: "Miembros del comité de innovación." },
+      { id: "organigrama", titulo: "Organigrama", desc: "Jerarquiza la innovación." },
+      { id: "lider", titulo: "Líder de Innovación", desc: "Elige el líder." },
+      { id: "acta", titulo: "Acta del Comité", desc: "Acta de inicio." },
+    ]
+  },
+  {
+    id: 2, titulo: "Canvas y Focos", icon: "🎯", color: C.yellow, dia: 1,
+    intro: "Analiza tu modelo de negocio con el Canvas y define los focos de innovación.",
+    actividades: [
+      { id: "canvas", titulo: "Canvas del Negocio", desc: "Business Model Canvas." },
+      { id: "focosInno", titulo: "Focos de Innovación", desc: "Dónde focalizar la innovación." },
+    ]
+  },
+  {
+    id: 3, titulo: "Estrategia de Innovación", icon: "🧭", color: C.green, dia: 1,
+    intro: "Define objetivos y estrategia de innovación a partir de la estrategia empresarial, usando el asistente PYLAR.",
+    actividades: [{ id: "estrategia", titulo: "Objetivos y Estrategia", desc: "Estrategia de innovación." }]
+  },
+  {
+    id: 4, titulo: "Retos de Innovación", icon: "⚡", color: C.red, dia: 2,
+    intro: "Identifica retos internos y externos, priorízalos y elige el reto que continúa.",
+    actividades: [
+      { id: "buscarRetos", titulo: "Buscar Retos", desc: "Cartelera de retos." },
+      { id: "priorizarRetos", titulo: "Priorizar Retos", desc: "Herramienta de priorización." },
+      { id: "retoContinua", titulo: "Reto que Continúa", desc: "Elige el reto." },
+    ]
+  },
+  {
+    id: 5, titulo: "Lluvia de Ideas", icon: "💡", color: C.yellow, dia: 2,
+    intro: "Genera ideas creativas para el reto seleccionado y elige la idea ganadora.",
+    actividades: [
+      { id: "lluviaIdeas", titulo: "Generar Ideas", desc: "Lluvia de ideas." },
+      { id: "ideaContinua", titulo: "Idea que Continúa", desc: "Elige la idea." },
+    ]
+  },
+  {
+    id: 6, titulo: "Vigilancia Tecnológica", icon: "🔍", color: C.cyan, dia: 2,
+    intro: "Realiza la vigilancia tecnológica usando el asistente PYLAR.",
+    actividades: [{ id: "vt", titulo: "Vigilancia Tecnológica", desc: "Link al informe PYLAR." }]
+  },
+  {
+    id: 7, titulo: "PMV y Validación", icon: "🚀", color: C.primary, dia: 2,
+    intro: "Construye y valida el Producto Mínimo Viable (PMV).",
+    actividades: [
+      { id: "pmv", titulo: "Construir PMV", desc: "Link al PMV." },
+      { id: "validacion", titulo: "Preguntas de Validación", desc: "Preguntas para validar." },
+    ]
+  },
+];
+
+// ============================================================
+// STYLES
+// ============================================================
+const inputStyle = { width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid " + C.border, fontSize: 14, fontFamily: "'Montserrat', sans-serif", outline: "none", transition: "border-color 0.2s", boxSizing: "border-box" };
+const textareaStyle = { ...inputStyle, minHeight: 80, resize: "vertical" };
+const labelStyle = { display: "block", fontSize: 13, fontWeight: 600, color: C.primary, marginBottom: 4, marginTop: 12 };
+const sectionTitleStyle = { fontSize: 18, fontWeight: 700, color: C.primary, borderBottom: "3px solid " + C.accent, paddingBottom: 8, marginBottom: 16, marginTop: 8 };
+const cardStyle = { background: "#fff", borderRadius: 12, padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.06)", marginBottom: 16, border: "1px solid " + C.lightGray };
+const btnStyle = (color) => ({ background: color || C.accent, color: "#fff", border: "none", padding: "8px 16px", borderRadius: 6, cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "'Montserrat', sans-serif", transition: "opacity 0.2s" });
+const tipStyle = { background: C.lightAccent, borderLeft: "4px solid " + C.accent, padding: "10px 14px", borderRadius: "0 8px 8px 0", fontSize: 13, color: C.primary, marginBottom: 16, lineHeight: 1.5 };
+
+// ============================================================
+// SHARED COMPONENTS
+// ============================================================
+function InfoBox({ title, children }) {
+  if (!title) title = "📖 Instrucciones";
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ background: "#FFF9EC", border: "1px solid #F0D98C", borderRadius: 10, marginBottom: 16, overflow: "hidden" }}>
+      <button onClick={() => setOpen(!open)} style={{ width: "100%", padding: "12px 16px", background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", fontFamily: "'Montserrat', sans-serif", fontSize: 14, fontWeight: 600, color: C.primary, textAlign: "left" }}>
+        <span>{title}</span>
+        <span style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s", fontSize: 12 }}>▼</span>
+      </button>
+      {open && <div style={{ padding: "0 16px 16px", fontSize: 13, lineHeight: 1.7, color: "#444", borderTop: "1px solid #F0D98C" }}>{children}</div>}
+    </div>
+  );
+}
+
+function RetoPostIt({ text, tipo, onTextChange, onTipoChange, onDelete }) {
+  const [localText, setLocalText] = useState(text);
+  const saveTimeout = useRef(null);
+  const colors = { problema: { bg: "#FF6B6B", text: "#fff" }, necesidad: { bg: "#FFD93D", text: "#333" }, oportunidad: { bg: "#6BCB77", text: "#fff" } };
+  const c = colors[tipo] || colors.necesidad;
+  const rotation = useRef(Math.random() * 4 - 2).current;
+  const handleChange = (val) => { setLocalText(val); if (saveTimeout.current) clearTimeout(saveTimeout.current); saveTimeout.current = setTimeout(() => onTextChange(val), 400); };
+  return (
+    <div style={{ position: "relative", marginTop: 10 }}>
+      <select value={tipo} onChange={e => onTipoChange(e.target.value)} style={{ position: "absolute", top: -8, left: 2, fontSize: 10, border: "none", background: "transparent", zIndex: 2, cursor: "pointer" }}>
+        <option value="problema">🔴</option><option value="necesidad">🟡</option><option value="oportunidad">🟢</option>
+      </select>
+      <div style={{ background: c.bg, color: c.text, padding: "10px 12px", borderRadius: 4, width: 140, minHeight: 90, position: "relative", boxShadow: "2px 3px 8px rgba(0,0,0,0.15)", fontFamily: "'Caveat', cursive", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", transform: "rotate(" + rotation + "deg)" }}>
+        <textarea value={localText} onChange={e => handleChange(e.target.value)} placeholder="Escribe aquí..." style={{ background: "transparent", border: "none", color: c.text, width: "100%", minHeight: 60, resize: "none", fontFamily: "inherit", fontSize: "inherit", textAlign: "center", outline: "none", cursor: "text", caretColor: c.text }} />
+        <button onClick={onDelete} style={{ position: "absolute", top: 2, right: 4, background: "none", border: "none", cursor: "pointer", fontSize: 14, opacity: 0.6, color: c.text }}>✕</button>
+      </div>
+    </div>
+  );
+}
+
+function RetoColumn({ title, subtitle, retos, onAdd, onUpdate, onDelete, color }) {
+  return (
+    <div style={{ flex: 1, minWidth: 240 }}>
+      <div style={{ background: color || C.primary, color: "#fff", padding: 10, textAlign: "center", fontWeight: 700, fontSize: 14, borderRadius: "8px 8px 0 0" }}>{title}</div>
+      <div style={{ background: C.darkPrimary, color: "#ccc", padding: 6, textAlign: "center", fontSize: 11 }}>{subtitle}</div>
+      <div style={{ background: "#E8ECF5", padding: 12, borderRadius: "0 0 8px 8px", minHeight: 220, display: "flex", flexWrap: "wrap", gap: 8, alignContent: "flex-start" }}>
+        {retos.map((r, i) => (
+          <RetoPostIt key={r.id || i} text={r.text} tipo={r.tipo} onTextChange={t => onUpdate(i, { text: t })} onTipoChange={t => onUpdate(i, { tipo: t })} onDelete={() => onDelete(i)} />
+        ))}
+        <button onClick={onAdd} style={{ background: C.accent, color: "#fff", border: "none", width: 44, height: 44, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, padding: 0, alignSelf: "center", cursor: "pointer", fontFamily: "'Montserrat', sans-serif" }}>+</button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// ACTIVITY RENDERERS
+// ============================================================
+function RenderActivity({ activityId, data, setData }) {
+  const u = (field, val) => setData(prev => ({ ...prev, [field]: val }));
+  const uNested = (field, subfield, val) => setData(prev => ({ ...prev, [field]: { ...prev[field], [subfield]: val } }));
+  const [showActa, setShowActa] = useState(false);
+
+  switch (activityId) {
+
+    case "datos":
+      return (
+        <div>
+          <div style={tipStyle}>Diligencia el nombre de tu empresa y la fecha del workshop.</div>
+          <div style={cardStyle}>
+            <label style={labelStyle}>Nombre de la empresa</label>
+            <input style={inputStyle} value={data.empresa.nombre} onChange={e => uNested("empresa", "nombre", e.target.value)} placeholder="Ej: Mi Empresa S.A.S." />
+            <label style={labelStyle}>Fecha del Workshop</label>
+            <input type="date" style={inputStyle} value={data.empresa.fecha} onChange={e => uNested("empresa", "fecha", e.target.value)} />
+          </div>
+        </div>
+      );
+
+    case "comite":
+      return (
+        <div>
+          <div style={tipStyle}>Cuando diligencies la tabla puedes agregar o quitar filas, dependiendo de los departamentos con los que cuente tu empresa.</div>
+          <div style={cardStyle}>
+            <div style={sectionTitleStyle}>Miembros del Comité de Innovación</div>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ background: C.primary, color: "#fff" }}><th style={{ padding: 10, textAlign: "left", fontSize: 13 }}>Departamento</th><th style={{ padding: 10, textAlign: "left", fontSize: 13 }}>Nombre del Director</th><th style={{ padding: 10, width: 40 }}></th></tr></thead>
+              <tbody>
+                {data.comite.map((m, i) => (
+                  <tr key={i} style={{ borderBottom: "1px solid " + C.lightGray }}>
+                    <td style={{ padding: 6 }}><input style={inputStyle} value={m.departamento} onChange={e => { const n = [...data.comite]; n[i] = { ...n[i], departamento: e.target.value }; u("comite", n); }} placeholder="Departamento" /></td>
+                    <td style={{ padding: 6 }}><input style={inputStyle} value={m.nombre} onChange={e => { const n = [...data.comite]; n[i] = { ...n[i], nombre: e.target.value }; u("comite", n); }} placeholder="Nombre" /></td>
+                    <td style={{ padding: 6, textAlign: "center" }}>{data.comite.length > 1 && <button onClick={() => u("comite", data.comite.filter((_, j) => j !== i))} style={{ ...btnStyle(C.red), padding: "4px 8px", fontSize: 12 }}>✕</button>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <button onClick={() => u("comite", [...data.comite, { departamento: "", nombre: "" }])} style={{ ...btnStyle(), marginTop: 12 }}>+ Agregar miembro</button>
+          </div>
+        </div>
+      );
+
+    case "organigrama":
+      return (
+        <div>
+          <div style={tipStyle}>Copia el link con el organigrama propuesto donde se vea la jerarquización de la innovación dentro de la empresa. Si la empresa no tiene organigrama, créalo primero.</div>
+          <div style={cardStyle}>
+            <div style={sectionTitleStyle}>Organigrama con Innovación Jerarquizada</div>
+            <label style={labelStyle}>Link al organigrama</label>
+            <input style={inputStyle} value={data.organigramaLink} onChange={e => u("organigramaLink", e.target.value)} placeholder="https://... (link a Canva, Draw.io, Google Drive, etc.)" />
+            <div style={{ fontSize: 12, color: C.gray, marginTop: 8 }}>Estudia y revisa el organigrama actual de la empresa y jerarquiza la innovación.</div>
+          </div>
+        </div>
+      );
+
+    case "lider":
+      return (
+        <div>
+          <div style={tipStyle}>Para este workshop el líder será uno de los asistentes. En caso de que la empresa decida seguir trabajando en innovación, ya decidirá quién será el líder.</div>
+          <div style={cardStyle}>
+            <div style={sectionTitleStyle}>Líder de Innovación</div>
+            <label style={labelStyle}>Nombre del Líder de Innovación</label>
+            <input style={{ ...inputStyle, fontSize: 18, fontWeight: 700, textAlign: "center", padding: 16 }} value={data.liderInnovacion} onChange={e => u("liderInnovacion", e.target.value)} placeholder="Nombre completo del líder" />
+          </div>
+        </div>
+      );
+
+    case "acta": {
+      const actaEmpresa = data.acta.empresa || data.empresa.nombre || "___________________";
+      const actaLider = data.liderInnovacion || "_________________________________";
+
+      const generateActaHTML = () => {
+        let html = '<div style="font-family:Georgia,serif;max-width:750px;margin:0 auto;padding:40px;color:#222;line-height:1.8;">';
+        html += '<div style="text-align:center;margin-bottom:28px;">';
+        html += '<div style="font-size:20px;font-weight:700;color:#1B3A5C;letter-spacing:2px;margin-bottom:4px;">ACTA N° 1</div>';
+        html += '<div style="font-size:16px;font-weight:700;color:#1B3A5C;">ACTA DE INICIO DEL COMITÉ DE INNOVACIÓN</div>';
+        html += '<div style="width:80px;height:3px;background:#E8432F;margin:12px auto 0;"></div></div>';
+        html += '<div style="background:#F5F7FA;border-radius:10px;padding:16px 20px;margin-bottom:24px;border:1px solid #E5E7EB;">';
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:14px;">';
+        html += '<div><strong>Fecha:</strong> ' + (data.acta.fecha || "_______________") + '</div>';
+        html += '<div><strong>Hora:</strong> ' + (data.acta.hora || "_______________") + '</div>';
+        html += '<div><strong>Lugar:</strong> ' + (data.acta.lugar || "_______________") + '</div>';
+        html += '<div><strong>Empresa:</strong> ' + actaEmpresa + '</div></div></div>';
+        html += '<div style="margin-bottom:24px;"><div style="font-weight:700;font-size:15px;color:#1B3A5C;margin-bottom:8px;">Asistentes:</div>';
+        html += '<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:2px solid #1B3A5C;"><th style="text-align:left;padding:6px 8px;font-size:13px;">Nombre</th><th style="text-align:left;padding:6px 8px;font-size:13px;">Cargo</th></tr></thead><tbody>';
+        data.acta.asistentes.forEach(a => { html += '<tr style="border-bottom:1px solid #E5E7EB;"><td style="padding:6px 8px;">' + (a.nombre || "_______________") + '</td><td style="padding:6px 8px;">' + (a.cargo || "_______________") + '</td></tr>'; });
+        html += '</tbody></table></div>';
+        html += '<div style="margin-bottom:24px;"><div style="font-weight:700;font-size:15px;color:#1B3A5C;margin-bottom:8px;">Orden del día:</div>';
+        html += '<ol style="padding-left:20px;"><li>Verificación del Quorum.</li><li>Posicionamiento del líder de innovación.</li><li>Nombramiento de los integrantes del comité.</li><li>Objetivo y funciones del comité.</li><li>Compromisos del comité.</li><li>Periodicidad de reunión.</li></ol></div>';
+        html += '<div style="font-weight:700;font-size:16px;color:#1B3A5C;margin-bottom:16px;border-bottom:2px solid #E8432F;padding-bottom:6px;">Desarrollo</div>';
+        html += '<div style="margin-bottom:20px;"><div style="font-weight:700;color:#1B3A5C;">1. Verificación del Quorum</div><p>Una vez que hemos verificado que el quorum es del 100% de los asistentes, damos continuidad a los temas a tratar en este comité de innovación.</p></div>';
+        html += '<div style="margin-bottom:20px;"><div style="font-weight:700;color:#1B3A5C;">2. Posicionamiento del líder de innovación</div>';
+        html += '<p>El día de hoy se posiciona en el cargo de Líder de innovación a <strong style="color:#E8432F;">' + actaLider + '</strong> quien de ahora en adelante tiene los siguientes compromisos:</p>';
+        html += '<ul style="padding-left:20px;"><li>Liderar la implementación del SGi.</li><li>Gestionar cada proceso con el personal encargado.</li><li>Convocar y liderar las reuniones de los comités.</li><li>Presentar al comité y/o a la Junta los resultados.</li><li>Motivar la cultura de innovación dentro de la empresa.</li><li>Trabajar de la mano de los directores de proyectos.</li><li>Representar a la empresa en el ecosistema de innovación.</li><li>Velar porque el SGi siempre esté funcionando.</li></ul></div>';
+        html += '<div style="margin-bottom:20px;"><div style="font-weight:700;color:#1B3A5C;">3. Nombramiento de los integrantes del comité</div>';
+        html += '<table style="width:100%;border-collapse:collapse;margin-top:8px;"><thead><tr style="background:#F5F7FA;"><th style="text-align:left;padding:6px 8px;font-size:13px;border-bottom:2px solid #1B3A5C;">Departamento</th><th style="text-align:left;padding:6px 8px;font-size:13px;border-bottom:2px solid #1B3A5C;">Nombre</th></tr></thead><tbody>';
+        data.comite.forEach(m => { html += '<tr style="border-bottom:1px solid #E5E7EB;"><td style="padding:6px 8px;">' + (m.departamento || "___") + '</td><td style="padding:6px 8px;">' + (m.nombre || "___") + '</td></tr>'; });
+        html += '</tbody></table></div>';
+        html += '<div style="margin-bottom:20px;"><div style="font-weight:700;color:#1B3A5C;">4. Objetivo y funciones del comité</div><p>El objetivo del comité de innovación es velar por que se cumplan con los objetivos de innovación planteados en la Estrategia de innovación, además de ser partícipes en la creación de la cultura de innovación.</p></div>';
+        html += '<div style="margin-bottom:20px;"><div style="font-weight:700;color:#1B3A5C;">5. Compromisos del comité</div><ul style="padding-left:20px;"><li>Apoyar la creación de la cultura de innovación.</li><li>Capacitar al personal en el funcionamiento del SGi.</li><li>Ser motivador y permitir la participación activa.</li><li>Participar en evaluaciones de retos, ideas y seguimiento a proyectos.</li></ul>';
+        if (data.acta.compromisos) html += '<div style="margin-top:8px;padding:8px 12px;background:#FDE8E5;border-radius:6px;"><div style="font-size:12px;font-weight:700;color:#1B3A5C;margin-bottom:4px;">Compromisos adicionales:</div><div style="white-space:pre-wrap;">' + data.acta.compromisos + '</div></div>';
+        html += '</div>';
+        const pTexto = data.acta.periodicidad === "semanal" ? "a la semana" : data.acta.periodicidad === "quincenal" ? "cada quince días" : data.acta.periodicidad === "bimensual" ? "cada dos meses" : data.acta.periodicidad === "trimestral" ? "cada tres meses" : "al mes";
+        html += '<div style="margin-bottom:28px;"><div style="font-weight:700;color:#1B3A5C;">6. Periodicidad</div><p>El comité de innovación se reunirá una vez ' + pTexto + '.</p></div>';
+        html += '<div style="text-align:center;margin-top:40px;padding-top:20px;border-top:2px solid #E8432F;color:#888;font-size:12px;"><p>Generado con la Plantilla Digital Workshop Innovación — PLYNN × Combarranquilla</p><p>' + new Date().toLocaleDateString("es-CO") + '</p></div></div>';
+        return html;
+      };
+
+      const downloadActaPDF = () => {
+        const content = generateActaHTML();
+        const el = document.createElement("div"); el.innerHTML = content; document.body.appendChild(el);
+        if (typeof html2pdf !== "undefined") {
+          html2pdf().from(el).set({ margin: [10,10,10,10], filename: "Acta-Comite-" + (data.empresa.nombre || "Empresa") + ".pdf", html2canvas: { scale: 2 }, jsPDF: { unit: "mm", format: "a4", orientation: "portrait" } }).save().then(() => document.body.removeChild(el));
+        } else { const w = window.open("","_blank"); w.document.write('<html><head><meta charset="UTF-8"><title>Acta</title></head><body>' + content + '</body></html>'); w.document.close(); setTimeout(() => w.print(), 600); document.body.removeChild(el); }
+      };
+
+      return (
+        <div>
+          <div style={tipStyle}>Diligencia los datos del acta y luego descárgala en PDF.</div>
+          <div style={cardStyle}>
+            <div style={sectionTitleStyle}>Acta N° 1 — Datos del Comité</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div><label style={labelStyle}>Fecha</label><input type="date" style={inputStyle} value={data.acta.fecha} onChange={e => uNested("acta", "fecha", e.target.value)} /></div>
+              <div><label style={labelStyle}>Hora</label><input type="time" style={inputStyle} value={data.acta.hora} onChange={e => uNested("acta", "hora", e.target.value)} /></div>
+              <div><label style={labelStyle}>Lugar</label><input style={inputStyle} value={data.acta.lugar} onChange={e => uNested("acta", "lugar", e.target.value)} placeholder="Lugar de la reunión" /></div>
+              <div><label style={labelStyle}>Empresa</label><input style={inputStyle} value={data.acta.empresa || data.empresa.nombre} onChange={e => uNested("acta", "empresa", e.target.value)} /></div>
+            </div>
+            <label style={labelStyle}>Asistentes</label>
+            {data.acta.asistentes.map((a, i) => (
+              <div key={i} style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+                <input style={inputStyle} value={a.nombre} onChange={e => { const n = [...data.acta.asistentes]; n[i] = { ...n[i], nombre: e.target.value }; uNested("acta", "asistentes", n); }} placeholder="Nombre" />
+                <input style={inputStyle} value={a.cargo} onChange={e => { const n = [...data.acta.asistentes]; n[i] = { ...n[i], cargo: e.target.value }; uNested("acta", "asistentes", n); }} placeholder="Cargo" />
+                {data.acta.asistentes.length > 1 && <button onClick={() => uNested("acta", "asistentes", data.acta.asistentes.filter((_, j) => j !== i))} style={{ ...btnStyle(C.red), padding: "4px 8px", flexShrink: 0 }}>✕</button>}
+              </div>
+            ))}
+            <button onClick={() => uNested("acta", "asistentes", [...data.acta.asistentes, { nombre: "", cargo: "" }])} style={{ ...btnStyle(), marginTop: 8 }}>+ Agregar asistente</button>
+            <label style={labelStyle}>Periodicidad</label>
+            <select style={inputStyle} value={data.acta.periodicidad} onChange={e => uNested("acta", "periodicidad", e.target.value)}>
+              <option value="semanal">Semanal</option><option value="quincenal">Quincenal</option><option value="mensual">Mensual</option><option value="bimensual">Bimensual</option><option value="trimestral">Trimestral</option>
+            </select>
+            <label style={labelStyle}>Compromisos adicionales</label>
+            <textarea style={textareaStyle} value={data.acta.compromisos} onChange={e => uNested("acta", "compromisos", e.target.value)} placeholder="Compromisos adicionales..." />
+            <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 24, flexWrap: "wrap" }}>
+              <button onClick={() => setShowActa(true)} style={{ background: "linear-gradient(135deg, " + C.primary + ", " + C.darkPrimary + ")", color: "#fff", border: "none", padding: "14px 28px", borderRadius: 10, cursor: "pointer", fontSize: 15, fontWeight: 700, fontFamily: "'Montserrat', sans-serif", boxShadow: "0 4px 15px rgba(27,58,92,0.3)" }}>👁️ Ver Acta</button>
+              <button onClick={downloadActaPDF} style={{ background: "linear-gradient(135deg, " + C.green + ", #2BA84A)", color: "#fff", border: "none", padding: "14px 28px", borderRadius: 10, cursor: "pointer", fontSize: 15, fontWeight: 700, fontFamily: "'Montserrat', sans-serif", boxShadow: "0 4px 15px rgba(52,199,89,0.3)" }}>📥 Descargar PDF</button>
+            </div>
+          </div>
+          {showActa && (
+            <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 20 }} onClick={e => { if (e.target === e.currentTarget) setShowActa(false); }}>
+              <div style={{ background: "#fff", borderRadius: 16, maxWidth: 750, width: "100%", maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                <div style={{ background: C.primary, color: "#fff", padding: "20px 28px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div><div style={{ fontSize: 18, fontWeight: 800 }}>📄 Acta N° 1</div></div>
+                  <button onClick={() => setShowActa(false)} style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "#fff", width: 36, height: 36, borderRadius: "50%", cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+                </div>
+                <div style={{ overflowY: "auto", padding: "20px 28px" }} dangerouslySetInnerHTML={{ __html: generateActaHTML() }} />
+                <div style={{ padding: "16px 28px", borderTop: "1px solid " + C.lightGray, display: "flex", justifyContent: "center", gap: 12, background: C.cream }}>
+                  <button onClick={downloadActaPDF} style={{ ...btnStyle(C.green), padding: "10px 24px" }}>📥 PDF</button>
+                  <button onClick={() => setShowActa(false)} style={{ ...btnStyle(C.gray), padding: "10px 24px" }}>Cerrar</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    case "canvas":
+      return (
+        <div>
+          <InfoBox title="📖 Instrucciones para diligenciar el Canvas">
+            <p style={{ marginTop: 8 }}>El CANVAS lo diligencias en el orden que te indican los números (1-9). En la <strong>propuesta de valor</strong> coloca qué solucionan tus productos al mercado: ¿Qué hace mi empresa? ¿Para quién? ¿Qué me diferencia?</p>
+          </InfoBox>
+          <div style={cardStyle}>
+            <div style={sectionTitleStyle}>Business Model Canvas</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr", gridTemplateRows: "auto auto auto", gap: 8, fontSize: 13 }}>
+              <div style={{ gridRow: "1/3", background: "#F0F4FF", borderRadius: 8, padding: 12, border: "1px solid " + C.border }}><div style={{ fontWeight: 700, color: C.cyan, fontSize: 11, marginBottom: 4 }}>9. PARTNERS</div><textarea style={{ ...textareaStyle, minHeight: 140, fontSize: 12 }} value={data.canvas.partners} onChange={e => uNested("canvas", "partners", e.target.value)} placeholder="Socios, Proveedores, Consultores..." /></div>
+              <div style={{ background: "#F0F4FF", borderRadius: 8, padding: 12, border: "1px solid " + C.border }}><div style={{ fontWeight: 700, color: C.cyan, fontSize: 11, marginBottom: 4 }}>7. RECURSOS CLAVES</div><textarea style={{ ...textareaStyle, minHeight: 50, fontSize: 12 }} value={data.canvas.recursosClaves} onChange={e => uNested("canvas", "recursosClaves", e.target.value)} placeholder="Maquinaria, Tecnología, RRHH..." /></div>
+              <div style={{ gridRow: "1/3", background: "#E8FDF0", borderRadius: 8, padding: 12, border: "1px solid " + C.border }}><div style={{ fontWeight: 700, color: C.green, fontSize: 11, marginBottom: 4 }}>1. PROPUESTA DE VALOR</div><textarea style={{ ...textareaStyle, minHeight: 140, fontSize: 12 }} value={data.canvas.propuestaValor} onChange={e => uNested("canvas", "propuestaValor", e.target.value)} placeholder="¿Qué hace mi empresa? ¿Para quién? ¿Qué me diferencia?" /></div>
+              <div style={{ background: "#FFF8E8", borderRadius: 8, padding: 12, border: "1px solid " + C.border }}><div style={{ fontWeight: 700, color: C.yellow, fontSize: 11, marginBottom: 4 }}>4. RELACIÓN CLIENTES</div><textarea style={{ ...textareaStyle, minHeight: 50, fontSize: 12 }} value={data.canvas.relacionClientes} onChange={e => uNested("canvas", "relacionClientes", e.target.value)} placeholder="Asistencia personal, Preferencial..." /></div>
+              <div style={{ gridRow: "1/3", background: "#FFF0F0", borderRadius: 8, padding: 12, border: "1px solid " + C.border }}><div style={{ fontWeight: 700, color: C.red, fontSize: 11, marginBottom: 4 }}>2. CLIENTES</div><textarea style={{ ...textareaStyle, minHeight: 140, fontSize: 12 }} value={data.canvas.clientes} onChange={e => uNested("canvas", "clientes", e.target.value)} placeholder="Define claramente tu mercado..." /></div>
+              <div style={{ background: "#F0F4FF", borderRadius: 8, padding: 12, border: "1px solid " + C.border }}><div style={{ fontWeight: 700, color: C.cyan, fontSize: 11, marginBottom: 4 }}>8. ACTIVIDADES CLAVES</div><textarea style={{ ...textareaStyle, minHeight: 50, fontSize: 12 }} value={data.canvas.actividadesClaves} onChange={e => uNested("canvas", "actividadesClaves", e.target.value)} placeholder="Producir, Vender, Distribuir..." /></div>
+              <div style={{ background: "#FFF8E8", borderRadius: 8, padding: 12, border: "1px solid " + C.border }}><div style={{ fontWeight: 700, color: C.yellow, fontSize: 11, marginBottom: 4 }}>3. CANALES</div><textarea style={{ ...textareaStyle, minHeight: 50, fontSize: 12 }} value={data.canvas.canales} onChange={e => uNested("canvas", "canales", e.target.value)} placeholder="Información, Compra, Entrega, Postventa..." /></div>
+              <div style={{ gridColumn: "1/4", background: "#F8F0FF", borderRadius: 8, padding: 12, border: "1px solid " + C.border }}><div style={{ fontWeight: 700, color: C.primary, fontSize: 11, marginBottom: 4 }}>6. ESTRUCTURA DE COSTOS</div><textarea style={{ ...textareaStyle, minHeight: 50, fontSize: 12 }} value={data.canvas.estructuraCostos} onChange={e => uNested("canvas", "estructuraCostos", e.target.value)} placeholder="Costos Fijos, Variables, Operativos..." /></div>
+              <div style={{ gridColumn: "4/6", background: "#F0FFF0", borderRadius: 8, padding: 12, border: "1px solid " + C.border }}><div style={{ fontWeight: 700, color: C.green, fontSize: 11, marginBottom: 4 }}>5. FUENTES DE INGRESO</div><textarea style={{ ...textareaStyle, minHeight: 50, fontSize: 12 }} value={data.canvas.fuentesIngreso} onChange={e => uNested("canvas", "fuentesIngreso", e.target.value)} placeholder="Suscripción, Efectivo, Crédito..." /></div>
+            </div>
+          </div>
+        </div>
+      );
+
+    case "focosInno": {
+      const totalFocos = data.focos.reduce((s, f) => s + (parseInt(f.porcentaje) || 0), 0);
+      return (
+        <div>
+          <InfoBox title="📖 Instrucciones focos de innovación">
+            <p style={{ marginTop: 8 }}><strong>Ejemplos:</strong></p>
+            <p>• <strong>Innovación en producto:</strong> necesitamos encontrar productos innovadores para marcar la diferencia.</p>
+            <p>• <strong>Innovación en proceso:</strong> introducir tecnología para mejorar la atención y experiencia del cliente.</p>
+            <p>• <strong>Innovación en Marketing:</strong> crear nuevos canales de comunicación.</p>
+            <p>• <strong>Innovación organizacional:</strong> implementar políticas de conciliación laboral y equipos multidisciplinarios.</p>
+            <p>• <strong>Innovación Modelo de Negocio:</strong> intraemprender para crear un negocio 100% virtual.</p>
+          </InfoBox>
+          <div style={tipStyle}>Asigna un porcentaje a cada foco. La suma debe ser <strong>100%</strong>.</div>
+          {totalFocos > 100 && <div style={{ background: "#FEF2F2", border: "2px solid " + C.red, borderRadius: 10, padding: "12px 16px", marginBottom: 16, fontWeight: 700, color: C.red, fontSize: 14 }}>⚠️ La suma supera el 100% (Total: {totalFocos}%)</div>}
+          <div style={cardStyle}>
+            <div style={sectionTitleStyle}>Focos de Innovación</div>
+            {data.focos.map((f, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 10, padding: "12px 16px", background: C.cream, borderRadius: 8, border: "1px solid " + C.lightGray }}>
+                <div style={{ fontWeight: 600, fontSize: 14, color: C.primary, flex: 1 }}>{f.tipo}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: C.gray }}>%</label>
+                  <input type="number" min={0} max={100} style={{ ...inputStyle, width: 80, textAlign: "center", fontSize: 18, fontWeight: 700 }} value={f.porcentaje} onChange={e => { const n = [...data.focos]; n[i] = { ...n[i], porcentaje: e.target.value }; u("focos", n); }} />
+                </div>
+              </div>
+            ))}
+            <div style={{ textAlign: "right", fontWeight: 700, fontSize: 16, marginTop: 8, color: totalFocos > 100 ? C.red : totalFocos === 100 ? C.green : C.primary, padding: "8px 16px" }}>Total: {totalFocos}% {totalFocos === 100 ? "✅" : totalFocos > 100 ? "❌" : ""}</div>
+          </div>
+        </div>
+      );
+    }
+
+    case "estrategia":
+      return (
+        <div>
+          <div style={{ background: C.lightAccent, border: "2px solid " + C.accent, borderRadius: 10, padding: "14px 18px", marginBottom: 20, fontSize: 13, color: C.primary, lineHeight: 1.7 }}>
+            ⚠️ <strong>Antes de comenzar</strong>, usa el asistente <strong>PYLAR — Crear Estrategia de Innovación</strong> y copia aquí los resultados.
+          </div>
+          <div style={cardStyle}>
+            <div style={sectionTitleStyle}>Objetivos y Estrategia de Innovación</div>
+            <label style={labelStyle}>Objetivos Estratégicos de la Empresa</label>
+            <textarea style={textareaStyle} value={data.objetivosEstrategicos} onChange={e => u("objetivosEstrategicos", e.target.value)} placeholder="Objetivos estratégicos..." />
+            <label style={labelStyle}>Focos de Innovación (resumen)</label>
+            <div style={{ padding: 8, background: C.cream, borderRadius: 6, fontSize: 13, marginBottom: 8 }}>
+              {data.focos.filter(f => f.porcentaje).map((f, i) => (<div key={i}>• <strong>{f.tipo}</strong> ({f.porcentaje}%)</div>))}
+              {!data.focos.some(f => f.porcentaje) && <span style={{ color: C.gray }}>Completa los focos primero</span>}
+            </div>
+            <label style={labelStyle}>Objetivos de Innovación</label>
+            <textarea style={{ ...textareaStyle, minHeight: 100 }} value={data.objetivosInnovacion} onChange={e => u("objetivosInnovacion", e.target.value)} placeholder="Resultados del asistente PYLAR..." />
+            <label style={labelStyle}>Estrategia de Innovación</label>
+            <textarea style={{ ...textareaStyle, minHeight: 120 }} value={data.estrategiaInnovacion} onChange={e => u("estrategiaInnovacion", e.target.value)} placeholder="Estrategia de innovación..." />
+            <label style={labelStyle}>Recursos destinados (financieros, humanos, físicos)</label>
+            <textarea style={textareaStyle} value={data.recursosEstrategia} onChange={e => u("recursosEstrategia", e.target.value)} placeholder="Recursos destinados..." />
+          </div>
+        </div>
+      );
+
+    case "buscarRetos": {
+      const addReto = (field) => u(field, [...data[field], { id: Date.now() + Math.random(), text: "", tipo: "necesidad" }]);
+      const updateReto = (field, i, val) => { const n = [...data[field]]; n[i] = { ...n[i], ...val }; u(field, n); };
+      const deleteReto = (field, i) => u(field, data[field].filter((_, j) => j !== i));
+      return (
+        <div>
+          <div style={tipStyle}>Cada empresa encontrará retos tanto internos como externos. Haz clic en "+" para agregar post-its. 🔴 problema · 🟡 necesidad · 🟢 oportunidad</div>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <RetoColumn title="RETOS INTERNOS" subtitle="Al interior de la empresa" retos={data.retosInternos} onAdd={() => addReto("retosInternos")} onUpdate={(i, val) => updateReto("retosInternos", i, val)} onDelete={(i) => deleteReto("retosInternos", i)} color={C.primary} />
+            <RetoColumn title="RETOS EXTERNOS" subtitle="Clientes, proveedores, sociedad, sector" retos={data.retosExternos} onAdd={() => addReto("retosExternos")} onUpdate={(i, val) => updateReto("retosExternos", i, val)} onDelete={(i) => deleteReto("retosExternos", i)} color={C.accent} />
+          </div>
+        </div>
+      );
+    }
+
+    case "priorizarRetos":
+      return (
+        <div>
+          <div style={tipStyle}>Usa la <strong>herramienta de PLYNN de priorización de retos</strong> y pega el link con el informe de los resultados.</div>
+          <div style={cardStyle}>
+            <div style={sectionTitleStyle}>Priorización de Retos</div>
+            <label style={labelStyle}>Link al informe de priorización</label>
+            <input style={inputStyle} value={data.linkPriorizacionRetos} onChange={e => u("linkPriorizacionRetos", e.target.value)} placeholder="https://..." />
+          </div>
+        </div>
+      );
+
+    case "retoContinua":
+      return (
+        <div>
+          <div style={tipStyle}>Selecciona del cuadrante de <strong>innovación cerrada</strong> un reto a trabajar para la ideación.</div>
+          <div style={cardStyle}>
+            <div style={sectionTitleStyle}>Reto que Continúa</div>
+            <label style={labelStyle}>Escribe el reto seleccionado</label>
+            <textarea style={textareaStyle} value={data.retoContinua} onChange={e => u("retoContinua", e.target.value)} placeholder="Escribe aquí el reto seleccionado..." />
+            <label style={labelStyle}>Tipo de reto</label>
+            <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
+              {["problema", "necesidad", "oportunidad"].map(t => (
+                <label key={t} style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+                  <input type="radio" checked={data.retoContinuaTipo === t} onChange={() => u("retoContinuaTipo", t)} />
+                  <span style={{ width: 16, height: 16, borderRadius: 4, display: "inline-block", background: t === "problema" ? "#FF6B6B" : t === "oportunidad" ? "#6BCB77" : "#FFD93D" }} />
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+
+    case "lluviaIdeas": {
+      const addIdea = () => u("ideasLluvia", [...data.ideasLluvia, { id: Date.now() + Math.random(), text: "", tipo: data.retoContinuaTipo || "necesidad" }]);
+      const updateIdea = (i, val) => { const n = [...data.ideasLluvia]; n[i] = { ...n[i], ...val }; u("ideasLluvia", n); };
+      const deleteIdea = (i) => u("ideasLluvia", data.ideasLluvia.filter((_, j) => j !== i));
+      return (
+        <div>
+          <InfoBox title="📖 Instrucciones para la lluvia de ideas">
+            <p style={{ marginTop: 8 }}>1. Generar ideas de manera individual.</p>
+            <p>2. Socialización y depuración de ideas.</p>
+            <p>3. Elegir una sola idea para seguir trabajándola.</p>
+          </InfoBox>
+          <div style={tipStyle}>Piensa de manera creativa: ideas diferentes, originales, disruptivas que le den solución al reto seleccionado.</div>
+          {data.retoContinua && (
+            <div style={{ background: C.lightAccent, border: "2px solid " + C.accent, borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.primary, marginBottom: 4 }}>Reto seleccionado:</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: C.accent }}>{data.retoContinua}</div>
+            </div>
+          )}
+          <div style={cardStyle}>
+            <div style={sectionTitleStyle}>Ideas para el Reto</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {data.ideasLluvia.map((idea, i) => (
+                <RetoPostIt key={idea.id || i} text={idea.text} tipo={idea.tipo} onTextChange={t => updateIdea(i, { text: t })} onTipoChange={t => updateIdea(i, { tipo: t })} onDelete={() => deleteIdea(i)} />
+              ))}
+              <button onClick={addIdea} style={{ background: C.accent, color: "#fff", border: "none", width: 44, height: 44, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, padding: 0, cursor: "pointer", alignSelf: "center", fontFamily: "'Montserrat', sans-serif" }}>+</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    case "ideaContinua":
+      return (
+        <div>
+          <div style={tipStyle}>Elige una idea que sea fácil de crear como PMV en este taller.</div>
+          <div style={cardStyle}>
+            <div style={sectionTitleStyle}>Idea que Continúa</div>
+            <label style={labelStyle}>Escribe la idea seleccionada</label>
+            <textarea style={textareaStyle} value={data.ideaContinua} onChange={e => u("ideaContinua", e.target.value)} placeholder="Escribe aquí la idea seleccionada..." />
+            <label style={labelStyle}>Tipo</label>
+            <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
+              {["problema", "necesidad", "oportunidad"].map(t => (
+                <label key={t} style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+                  <input type="radio" checked={data.ideaContinuaTipo === t} onChange={() => u("ideaContinuaTipo", t)} />
+                  <span style={{ width: 16, height: 16, borderRadius: 4, display: "inline-block", background: t === "problema" ? "#FF6B6B" : t === "oportunidad" ? "#6BCB77" : "#FFD93D" }} />
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+
+    case "vt":
+      return (
+        <div>
+          <div style={tipStyle}>Usa el asistente <strong>PYLAR de Vigilancia Tecnológica</strong> y pega el link con el informe.</div>
+          <div style={cardStyle}>
+            <div style={sectionTitleStyle}>Vigilancia Tecnológica</div>
+            <label style={labelStyle}>Link al informe de PYLAR de Vigilancia Tecnológica</label>
+            <input style={inputStyle} value={data.linkVT} onChange={e => u("linkVT", e.target.value)} placeholder="https://..." />
+          </div>
+        </div>
+      );
+
+    case "pmv":
+      return (
+        <div>
+          <div style={tipStyle}>Sube un link donde se muestre el PMV que has construido.</div>
+          <div style={cardStyle}>
+            <div style={sectionTitleStyle}>Producto Mínimo Viable (PMV)</div>
+            <label style={labelStyle}>Link al PMV</label>
+            <input style={inputStyle} value={data.linkPMV} onChange={e => u("linkPMV", e.target.value)} placeholder="https://..." />
+            <div style={{ fontSize: 12, color: C.gray, marginTop: 8 }}>Puede ser un link a Canva, Google Drive, video, prototipo digital, etc.</div>
+          </div>
+        </div>
+      );
+
+    case "validacion": {
+      const updatePreg = (i, val) => { const n = [...data.preguntasValidacion]; n[i] = { ...n[i], pregunta: val }; u("preguntasValidacion", n); };
+      const addPreg = () => u("preguntasValidacion", [...data.preguntasValidacion, { pregunta: "" }]);
+      const removePreg = (i) => { if (data.preguntasValidacion.length > 1) u("preguntasValidacion", data.preguntasValidacion.filter((_, j) => j !== i)); };
+      return (
+        <div>
+          <div style={tipStyle}>Escribe las preguntas que le harás al público con el que validarás el PMV.</div>
+          <div style={cardStyle}>
+            <div style={sectionTitleStyle}>Preguntas de Validación del PMV</div>
+            {data.preguntasValidacion.map((q, i) => (
+              <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
+                <span style={{ fontWeight: 700, color: C.primary, fontSize: 14, minWidth: 24 }}>{i + 1}.</span>
+                <input style={inputStyle} value={q.pregunta} onChange={e => updatePreg(i, e.target.value)} placeholder={"Pregunta " + (i + 1)} />
+                {data.preguntasValidacion.length > 1 && <button onClick={() => removePreg(i)} style={{ ...btnStyle(C.red), padding: "4px 8px", fontSize: 12, flexShrink: 0 }}>✕</button>}
+              </div>
+            ))}
+            <button onClick={addPreg} style={{ ...btnStyle(), marginTop: 8 }}>+ Agregar pregunta</button>
+          </div>
+        </div>
+      );
+    }
+
+    default:
+      return (<div style={cardStyle}><div style={{ textAlign: "center", padding: 40, color: C.gray }}><div style={{ fontSize: 48, marginBottom: 12 }}>🚧</div><div style={{ fontSize: 16, fontWeight: 600 }}>En desarrollo</div></div></div>);
+  }
+}
+
+
+// ============================================================
+// PDF GENERATOR
+// ============================================================
+function generatePDFContent(data) {
+  const sv = (v) => v || "—";
+  let html = '<div style="font-family:Arial,sans-serif;max-width:800px;margin:0 auto;padding:40px;color:#222;line-height:1.6;">';
+  html += '<div style="text-align:center;margin-bottom:40px;"><h1 style="color:#1B3A5C;margin:0;">Workshop de Innovación</h1><p style="color:#E8432F;font-size:16px;">PLYNN × Combarranquilla · Junio 2026</p><p>Empresa: <strong>' + sv(data.empresa.nombre) + '</strong></p></div>';
+  html += '<h2 style="color:#1B3A5C;border-bottom:3px solid #E8432F;padding-bottom:8px;">Comité de Innovación</h2>';
+  html += '<p><strong>Líder:</strong> ' + sv(data.liderInnovacion) + '</p>';
+  html += '<p><strong>Organigrama:</strong> ' + sv(data.organigramaLink) + '</p>';
+  html += '<table style="width:100%;border-collapse:collapse;margin:8px 0;"><thead><tr style="background:#1B3A5C;color:#fff;"><th style="padding:8px;text-align:left;">Departamento</th><th style="padding:8px;text-align:left;">Nombre</th></tr></thead><tbody>';
+  data.comite.forEach(m => { html += '<tr style="border-bottom:1px solid #ddd;"><td style="padding:6px;">' + sv(m.departamento) + '</td><td style="padding:6px;">' + sv(m.nombre) + '</td></tr>'; });
+  html += '</tbody></table>';
+  html += '<h2 style="color:#1B3A5C;border-bottom:3px solid #E8432F;padding-bottom:8px;margin-top:24px;">Canvas del Negocio</h2>';
+  const cf = [["Propuesta de Valor","propuestaValor"],["Clientes","clientes"],["Canales","canales"],["Relación Clientes","relacionClientes"],["Fuentes de Ingreso","fuentesIngreso"],["Estructura de Costos","estructuraCostos"],["Recursos Claves","recursosClaves"],["Actividades Claves","actividadesClaves"],["Partners","partners"]];
+  cf.forEach(([l,k]) => { html += '<p><strong>' + l + ':</strong> ' + sv(data.canvas[k]) + '</p>'; });
+  html += '<h2 style="color:#1B3A5C;border-bottom:3px solid #E8432F;padding-bottom:8px;margin-top:24px;">Focos de Innovación</h2>';
+  data.focos.forEach(f => { if (f.porcentaje) html += '<p>• ' + f.tipo + ': <strong>' + f.porcentaje + '%</strong></p>'; });
+  html += '<h2 style="color:#1B3A5C;border-bottom:3px solid #E8432F;padding-bottom:8px;margin-top:24px;">Estrategia de Innovación</h2>';
+  html += '<p><strong>Objetivos Estratégicos:</strong> ' + sv(data.objetivosEstrategicos) + '</p>';
+  html += '<p><strong>Objetivos de Innovación:</strong> ' + sv(data.objetivosInnovacion) + '</p>';
+  html += '<p><strong>Estrategia:</strong> ' + sv(data.estrategiaInnovacion) + '</p>';
+  html += '<p><strong>Recursos:</strong> ' + sv(data.recursosEstrategia) + '</p>';
+  html += '<h2 style="color:#1B3A5C;border-bottom:3px solid #E8432F;padding-bottom:8px;margin-top:24px;">Retos</h2>';
+  html += '<p><strong>Link priorización:</strong> ' + sv(data.linkPriorizacionRetos) + '</p>';
+  html += '<p><strong>Reto que continúa:</strong> ' + sv(data.retoContinua) + '</p>';
+  html += '<h2 style="color:#1B3A5C;border-bottom:3px solid #E8432F;padding-bottom:8px;margin-top:24px;">Idea que Continúa</h2>';
+  html += '<p>' + sv(data.ideaContinua) + '</p>';
+  html += '<h2 style="color:#1B3A5C;border-bottom:3px solid #E8432F;padding-bottom:8px;margin-top:24px;">Vigilancia Tecnológica</h2>';
+  html += '<p><strong>Link informe:</strong> ' + sv(data.linkVT) + '</p>';
+  html += '<h2 style="color:#1B3A5C;border-bottom:3px solid #E8432F;padding-bottom:8px;margin-top:24px;">PMV y Validación</h2>';
+  html += '<p><strong>Link PMV:</strong> ' + sv(data.linkPMV) + '</p>';
+  html += '<p><strong>Preguntas de validación:</strong></p>';
+  data.preguntasValidacion.forEach((q, i) => { if (q.pregunta) html += '<p>' + (i+1) + '. ' + q.pregunta + '</p>'; });
+  html += '<div style="text-align:center;margin-top:60px;padding-top:20px;border-top:2px solid #E8432F;color:#888;font-size:12px;"><p>PLYNN × Combarranquilla · ' + new Date().toLocaleDateString("es-CO") + '</p></div></div>';
+  return html;
+}
+
+function downloadPDF(data) {
+  const content = generatePDFContent(data);
+  const el = document.createElement("div"); el.innerHTML = content; document.body.appendChild(el);
+  if (typeof html2pdf !== "undefined") {
+    html2pdf().from(el).set({ margin: [10,10,10,10], filename: "Workshop-" + (data.empresa.nombre || "Empresa") + ".pdf", html2canvas: { scale: 2 }, jsPDF: { unit: "mm", format: "a4", orientation: "portrait" } }).save().then(() => document.body.removeChild(el));
+  } else { const w = window.open("","_blank"); w.document.write("<html><head><title>Workshop</title></head><body>" + content + "</body></html>"); w.document.close(); setTimeout(() => w.print(), 500); document.body.removeChild(el); }
+}
+
+// ============================================================
+// PROGRESS
+// ============================================================
+function calcProgress(data) {
+  let total = 0, filled = 0;
+  const ck = (v) => { total++; if (v && String(v).trim()) filled++; };
+  ck(data.empresa.nombre); ck(data.liderInnovacion);
+  data.comite.forEach(m => { ck(m.departamento); ck(m.nombre); });
+  ck(data.acta.fecha); ck(data.acta.lugar);
+  Object.values(data.canvas).forEach(v => ck(v));
+  data.focos.forEach(f => ck(f.porcentaje));
+  ck(data.objetivosInnovacion); ck(data.estrategiaInnovacion);
+  ck(data.retoContinua); ck(data.ideaContinua);
+  ck(data.linkVT); ck(data.linkPMV);
+  data.preguntasValidacion.forEach(q => ck(q.pregunta));
+  return total > 0 ? Math.round((filled / total) * 100) : 0;
+}
+
+// ============================================================
+// MAIN APP
+// ============================================================
+function WorkshopApp() {
+  const [data, setData] = useState(DEFAULT_DATA);
+  const [currentTaller, setCurrentTaller] = useState(0);
+  const [currentActivity, setCurrentActivity] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showDashboard, setShowDashboard] = useState(true);
+  const [saveStatus, setSaveStatus] = useState("");
+  const [empresa, setEmpresa] = useState("");
+  const saveTimeoutRef = useRef(null);
+  const mainRef = useRef(null);
+
+  useEffect(() => {
+    const stored = sessionStorage.getItem("combarranquilla_empresa");
+    if (stored) { setEmpresa(stored); loadData(stored); } else { setLoading(false); }
+  }, []);
+
+  const loadData = async (emp) => {
+    try {
+      const result = await apiCall("load", { empresa: emp });
+      if (result.success && result.datos && Object.keys(result.datos).length > 0) {
+        setData(prev => {
+          const merged = { ...DEFAULT_DATA, ...result.datos };
+          if (!merged.retosExternos) merged.retosExternos = [];
+          if (!merged.ideasLluvia) merged.ideasLluvia = [];
+          if (!merged.preguntasValidacion) merged.preguntasValidacion = DEFAULT_DATA.preguntasValidacion;
+          return merged;
+        });
+        if (result.fromLocal) { setSaveStatus("⚠️ Datos desde respaldo local"); setTimeout(() => setSaveStatus(""), 5000); }
+      }
+    } catch(e) { console.error(e); }
+    setLoading(false);
+  };
+
+  const saveData = useCallback(async (dataToSave) => {
+    if (!empresa) return;
+    setSaving(true); setSaveStatus("Guardando...");
+    try {
+      const result = await apiCall("save", { empresa, datos: dataToSave });
+      setSaveStatus(result.success ? "✅ Guardado" : "⚠️ " + (result.error || "Error"));
+    } catch(e) {
+      try { localStorage.setItem(STORAGE_KEY + "_" + empresa, JSON.stringify(dataToSave)); } catch(le){}
+      setSaveStatus("⚠️ Solo local");
+    }
+    setSaving(false); setTimeout(() => setSaveStatus(""), 4000);
+  }, [empresa]);
+
+  const dataRef = useRef(data); dataRef.current = data;
+  useEffect(() => {
+    if (loading || !empresa) return;
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => saveData(dataRef.current), 5000);
+    return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
+  }, [data, loading, empresa, saveData]);
+
+  const handleLogout = () => {
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveData(data).then(() => { sessionStorage.removeItem("combarranquilla_empresa"); window.location.reload(); });
+  };
+
+  const progress = calcProgress(data);
+  const taller = TALLERES[currentTaller];
+  const activity = taller ? taller.actividades[currentActivity] : null;
+  const isLastActivity = currentTaller === TALLERES.length - 1 && currentActivity === taller.actividades.length - 1;
+
+  const goToActivity = (ti, ai) => { setCurrentTaller(ti); setCurrentActivity(ai || 0); setShowDashboard(false); setSidebarOpen(false); if (mainRef.current) mainRef.current.scrollTop = 0; };
+
+  if (loading) return (<div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: C.cream }}><div style={{ textAlign: "center" }}><div style={{ fontSize: 48, marginBottom: 16 }}>🚀</div><div style={{ fontSize: 16, color: C.primary, fontWeight: 600 }}>Cargando...</div></div></div>);
+
+  // DASHBOARD
+  if (showDashboard) {
+    return (
+      <div style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ background: C.primary, color: "#fff", padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ fontSize: 24 }}>🚀</span>
+            <div><div style={{ fontSize: 16, fontWeight: 800 }}>WORKSHOP INNOVACIÓN</div><div style={{ fontSize: 11, opacity: 0.7 }}>PLYNN × Combarranquilla</div></div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            {saveStatus && <span style={{ fontSize: 12, opacity: 0.8 }}>{saveStatus}</span>}
+            <button onClick={() => saveData(data)} disabled={saving} style={{ ...btnStyle(C.accent), padding: "6px 14px", fontSize: 12 }}>{saving ? "..." : "💾 Guardar"}</button>
+            <button onClick={() => downloadPDF(data)} style={{ ...btnStyle(C.green), padding: "6px 14px", fontSize: 12 }}>📥 PDF</button>
+            <button onClick={handleLogout} style={{ ...btnStyle(C.red), padding: "6px 14px", fontSize: 12 }}>🚪 Salir</button>
+          </div>
+        </div>
+        <div style={{ flex: 1, overflowY: "auto", padding: 24, background: C.cream }}>
+          <div style={{ ...cardStyle, padding: 24, marginBottom: 24 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: C.primary }}>{data.empresa.nombre ? ("¡Hola, " + data.empresa.nombre + "! 👋") : "¡Bienvenido! 👋"}</div>
+                <div style={{ fontSize: 13, color: C.gray, marginTop: 4 }}>Progreso del workshop</div>
+              </div>
+              <div style={{ fontSize: 32, fontWeight: 800, color: progress >= 80 ? C.green : progress >= 40 ? C.yellow : C.accent }}>{progress}%</div>
+            </div>
+            <div style={{ background: C.lightGray, borderRadius: 10, height: 12, overflow: "hidden" }}>
+              <div style={{ background: progress >= 80 ? C.green : progress >= 40 ? C.yellow : C.accent, height: "100%", width: progress + "%", borderRadius: 10, transition: "width 0.5s" }} />
+            </div>
+          </div>
+
+          {[1, 2].map(dia => (
+            <div key={dia}>
+              <div style={{ fontSize: 16, fontWeight: 800, color: C.primary, marginBottom: 12, marginTop: dia > 1 ? 24 : 0, padding: "8px 16px", background: dia === 1 ? C.lightAccent : "#E0F5F7", borderRadius: 8, borderLeft: "4px solid " + (dia === 1 ? C.accent : C.cyan) }}>
+                📅 Día {dia}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16, marginBottom: 16 }}>
+                {TALLERES.filter(t => t.dia === dia).map((t, ti) => {
+                  const realIdx = TALLERES.findIndex(x => x.id === t.id);
+                  return (
+                    <div key={t.id} onClick={() => goToActivity(realIdx, 0)} style={{ ...cardStyle, cursor: "pointer", borderLeft: "4px solid " + (t.color || C.accent) }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                        <span style={{ fontSize: 28 }}>{t.icon}</span>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: t.color || C.accent }}>{t.titulo}</div>
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 12, color: C.gray }}>{t.actividades.length} actividad{t.actividades.length > 1 ? "es" : ""}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // TALLER VIEW
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div style={{ background: C.primary, color: "#fff", padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{ background: "none", border: "none", color: "#fff", fontSize: 20, cursor: "pointer", padding: 4 }}>☰</button>
+          <span style={{ fontSize: 20 }}>🚀</span>
+          <span style={{ fontSize: 14, fontWeight: 700 }}>WORKSHOP</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {saveStatus && <span style={{ fontSize: 11, opacity: 0.8 }}>{saveStatus}</span>}
+          <button onClick={() => saveData(data)} disabled={saving} style={{ ...btnStyle(C.accent), padding: "4px 10px", fontSize: 11 }}>{saving ? "..." : "💾"}</button>
+          <button onClick={() => setShowDashboard(true)} style={{ ...btnStyle(C.green), padding: "4px 10px", fontSize: 11 }}>🏠</button>
+          <button onClick={handleLogout} style={{ ...btnStyle(C.red), padding: "4px 10px", fontSize: 11 }}>🚪</button>
+        </div>
+      </div>
+      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+        <aside className={sidebarOpen ? "open" : ""} style={{ width: 260, background: "#fff", borderRight: "1px solid " + C.lightGray, overflowY: "auto", flexShrink: 0, transition: "transform 0.2s" }}>
+          <div style={{ padding: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.gray, marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>Talleres</div>
+            {TALLERES.map((t, ti) => (
+              <div key={ti} style={{ marginBottom: 4 }}>
+                <div onClick={() => goToActivity(ti, 0)} style={{ padding: "8px 12px", borderRadius: 6, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", gap: 8, background: currentTaller === ti ? C.lightAccent : "transparent", color: currentTaller === ti ? C.accent : C.primary, fontWeight: currentTaller === ti ? 700 : 500 }}>
+                  <span>{t.icon}</span><span>{t.titulo}</span>
+                </div>
+                {currentTaller === ti && t.actividades.map((a, ai) => (
+                  <div key={ai} onClick={() => goToActivity(ti, ai)} style={{ padding: "6px 12px 6px 36px", fontSize: 12, cursor: "pointer", borderRadius: 4, background: currentActivity === ai ? "#FDE8E5" : "transparent", color: currentActivity === ai ? C.accent : C.gray, fontWeight: currentActivity === ai ? 600 : 400 }}>{a.titulo}</div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </aside>
+        <main ref={mainRef} style={{ flex: 1, overflowY: "auto", padding: 24, background: C.cream }}>
+          {taller && (
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+                <span style={{ fontSize: 32 }}>{taller.icon}</span>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: C.gray, textTransform: "uppercase", letterSpacing: 1 }}>Día {taller.dia}</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: C.primary }}>{taller.titulo}</div>
+                </div>
+              </div>
+              {taller.intro && <div style={{ ...tipStyle, marginBottom: 20 }}>{taller.intro}</div>}
+              {taller.actividades.length > 1 && (
+                <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+                  {taller.actividades.map((a, ai) => (
+                    <button key={ai} onClick={() => { setCurrentActivity(ai); if (mainRef.current) mainRef.current.scrollTop = 0; }} style={{ padding: "8px 16px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "'Montserrat', sans-serif", background: currentActivity === ai ? (taller.color || C.accent) : "#fff", color: currentActivity === ai ? "#fff" : C.primary, boxShadow: currentActivity === ai ? "0 2px 8px rgba(0,0,0,0.15)" : "0 1px 3px rgba(0,0,0,0.08)" }}>{a.titulo}</button>
+                  ))}
+                </div>
+              )}
+              {activity && <RenderActivity activityId={activity.id} data={data} setData={setData} />}
+              {isLastActivity && (
+                <div style={{ marginTop: 32, padding: 24, background: "linear-gradient(135deg, #E8F5E9, #FDE8E5)", borderRadius: 16, textAlign: "center", border: "2px solid " + C.green }}>
+                  <div style={{ fontSize: 40, marginBottom: 12 }}>🎉</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: C.primary, marginBottom: 8 }}>¡Felicitaciones!</div>
+                  <div style={{ fontSize: 14, color: C.gray, marginBottom: 20 }}>Has completado el workshop de innovación.</div>
+                  <button onClick={() => downloadPDF(data)} style={{ background: "linear-gradient(135deg, " + C.green + ", #2BA84A)", color: "#fff", border: "none", padding: "16px 36px", borderRadius: 12, cursor: "pointer", fontSize: 16, fontWeight: 700, fontFamily: "'Montserrat', sans-serif" }}>📥 Descargar Plantilla (PDF)</button>
+                </div>
+              )}
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 32, paddingTop: 16, borderTop: "1px solid " + C.lightGray }}>
+                <button onClick={() => { if (currentActivity > 0) setCurrentActivity(currentActivity - 1); else if (currentTaller > 0) { setCurrentTaller(currentTaller - 1); setCurrentActivity(TALLERES[currentTaller - 1].actividades.length - 1); } if (mainRef.current) mainRef.current.scrollTop = 0; }} disabled={currentTaller === 0 && currentActivity === 0} style={{ ...btnStyle(C.primary), padding: "10px 20px", opacity: (currentTaller === 0 && currentActivity === 0) ? 0.4 : 1 }}>← Anterior</button>
+                <button onClick={() => { if (currentActivity < taller.actividades.length - 1) setCurrentActivity(currentActivity + 1); else if (currentTaller < TALLERES.length - 1) { setCurrentTaller(currentTaller + 1); setCurrentActivity(0); } if (mainRef.current) mainRef.current.scrollTop = 0; }} disabled={isLastActivity} style={{ ...btnStyle(C.accent), padding: "10px 20px", opacity: isLastActivity ? 0.4 : 1 }}>Siguiente →</button>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+
+// ============================================================
+// LOGIN
+// ============================================================
+function LoginScreen({ onLogin }) {
+  const [mode, setMode] = useState("login");
+  const [empresa, setEmpresa] = useState("");
+  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("");
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [resetStep, setResetStep] = useState(0);
+  const [resetCode, setResetCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+
+  const handleSubmit = async () => {
+    if (!empresa.trim() || !password.trim()) { setError("Completa todos los campos."); return; }
+    setLoading(true); setError(""); setInfo("");
+    try {
+      if (mode === "login") {
+        const res = await apiCall("login", { empresa: empresa.trim(), password });
+        if (res.success) { sessionStorage.setItem("combarranquilla_empresa", empresa.trim()); onLogin(empresa.trim()); }
+        else setError(res.error || "Error al iniciar sesión.");
+      } else {
+        if (!email.trim()) { setError("Ingresa tu email."); setLoading(false); return; }
+        const res = await apiCall("register", { empresa: empresa.trim(), password, email: email.trim() });
+        if (res.success) { sessionStorage.setItem("combarranquilla_empresa", empresa.trim()); onLogin(empresa.trim()); }
+        else setError(res.error || "Error al registrar.");
+      }
+    } catch(e) { setError("Error de conexión."); }
+    setLoading(false);
+  };
+
+  const handleReset = async () => {
+    setError(""); setInfo("");
+    if (resetStep === 0) {
+      if (!empresa.trim()) { setError("Ingresa el nombre de la empresa."); return; }
+      setLoading(true);
+      const res = await apiCall("resetPassword", { empresa: empresa.trim() });
+      if (res.success) { setResetStep(1); setInfo("✅ Código enviado al correo registrado."); }
+      else setError(res.error || "Error.");
+      setLoading(false);
+    } else {
+      if (!resetCode.trim() || !newPassword.trim()) { setError("Completa todos los campos."); return; }
+      setLoading(true);
+      const res = await apiCall("verifyCode", { empresa: empresa.trim(), code: resetCode.trim(), newPassword });
+      if (res.success) { setMode("login"); setResetStep(0); setInfo("✅ Contraseña actualizada."); setPassword(""); }
+      else setError(res.error || "Código incorrecto.");
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, " + C.primary + " 0%, " + C.darkPrimary + " 50%, " + C.accent + " 100%)", padding: 20 }}>
+      <div style={{ background: "#fff", borderRadius: 20, padding: 40, maxWidth: 420, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <div style={{ fontSize: 48, marginBottom: 8 }}>🚀</div>
+          <div style={{ fontSize: 24, fontWeight: 800, color: C.primary }}>WORKSHOP INNOVACIÓN</div>
+          <div style={{ fontSize: 13, color: C.gray, marginTop: 4 }}>PLYNN × Combarranquilla</div>
+        </div>
+
+        {mode === "reset" ? (
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: C.primary, marginBottom: 16, textAlign: "center" }}>Recuperar Contraseña</div>
+            {resetStep === 0 ? (
+              <div><label style={labelStyle}>Empresa</label><input style={inputStyle} value={empresa} onChange={e => setEmpresa(e.target.value)} placeholder="Nombre exacto" onKeyDown={e => e.key === "Enter" && handleReset()} /></div>
+            ) : (
+              <div><label style={labelStyle}>Código</label><input style={{ ...inputStyle, letterSpacing: 4, textAlign: "center", fontSize: 18, fontWeight: 700 }} value={resetCode} onChange={e => setResetCode(e.target.value)} placeholder="• • • • • •" /><label style={labelStyle}>Nueva contraseña</label><input type="password" style={inputStyle} value={newPassword} onChange={e => setNewPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleReset()} /></div>
+            )}
+            {info && <div style={{ color: C.green, fontSize: 13, marginTop: 8, padding: "8px 12px", background: "#F0FFF4", borderRadius: 6 }}>{info}</div>}
+            {error && <div style={{ color: C.red, fontSize: 13, marginTop: 8, padding: "8px 12px", background: "#FEF2F2", borderRadius: 6 }}>{error}</div>}
+            <button onClick={handleReset} disabled={loading} style={{ ...btnStyle(C.accent), width: "100%", padding: 14, fontSize: 16, marginTop: 16, opacity: loading ? 0.6 : 1 }}>{loading ? "..." : resetStep === 0 ? "📧 Enviar código" : "✅ Verificar"}</button>
+            <button onClick={() => { setMode("login"); setResetStep(0); setError(""); setInfo(""); }} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 13, marginTop: 12, width: "100%", textAlign: "center", fontFamily: "'Montserrat', sans-serif" }}>← Volver al login</button>
+          </div>
+        ) : (
+          <div>
+            <div style={{ display: "flex", marginBottom: 20, borderRadius: 8, overflow: "hidden", border: "1px solid " + C.lightGray }}>
+              <button onClick={() => { setMode("login"); setError(""); setInfo(""); }} style={{ flex: 1, padding: "10px 0", border: "none", cursor: "pointer", fontWeight: 600, fontSize: 14, fontFamily: "'Montserrat', sans-serif", background: mode === "login" ? C.primary : "#fff", color: mode === "login" ? "#fff" : C.gray }}>Iniciar Sesión</button>
+              <button onClick={() => { setMode("register"); setError(""); setInfo(""); }} style={{ flex: 1, padding: "10px 0", border: "none", cursor: "pointer", fontWeight: 600, fontSize: 14, fontFamily: "'Montserrat', sans-serif", background: mode === "register" ? C.primary : "#fff", color: mode === "register" ? "#fff" : C.gray }}>Registrarse</button>
+            </div>
+            <label style={labelStyle}>Empresa</label>
+            <input style={inputStyle} value={empresa} onChange={e => setEmpresa(e.target.value)} placeholder="Nombre de la empresa" onKeyDown={e => e.key === "Enter" && handleSubmit()} />
+            {mode === "register" && (<div><label style={labelStyle}>Email</label><input type="email" style={inputStyle} value={email} onChange={e => setEmail(e.target.value)} placeholder="Email de contacto" /></div>)}
+            <label style={labelStyle}>Contraseña</label>
+            <input type="password" style={inputStyle} value={password} onChange={e => setPassword(e.target.value)} placeholder={mode === "register" ? "Crea una contraseña" : "Tu contraseña"} onKeyDown={e => e.key === "Enter" && handleSubmit()} />
+            {info && <div style={{ color: C.green, fontSize: 13, marginTop: 8, padding: "8px 12px", background: "#F0FFF4", borderRadius: 6 }}>{info}</div>}
+            {error && <div style={{ color: C.red, fontSize: 13, marginTop: 8, padding: "8px 12px", background: "#FEF2F2", borderRadius: 6 }}>{error}</div>}
+            <button onClick={handleSubmit} disabled={loading} style={{ ...btnStyle(C.accent), width: "100%", padding: 14, fontSize: 16, marginTop: 20, opacity: loading ? 0.6 : 1 }}>{loading ? "..." : mode === "login" ? "Entrar 🚀" : "Registrarme 🚀"}</button>
+            {mode === "login" && <button onClick={() => { setMode("reset"); setError(""); setInfo(""); }} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 12, marginTop: 12, width: "100%", textAlign: "center", fontFamily: "'Montserrat', sans-serif" }}>¿Olvidaste tu contraseña?</button>}
+          </div>
+        )}
+        <div style={{ textAlign: "center", marginTop: 24, fontSize: 11, color: C.gray }}>PLYNN × Combarranquilla · Junio 2026</div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// APP WRAPPER
+// ============================================================
+function AppWrapper() {
+  const [loggedIn, setLoggedIn] = useState(!!sessionStorage.getItem("combarranquilla_empresa"));
+  if (!loggedIn) return <LoginScreen onLogin={() => setLoggedIn(true)} />;
+  return <WorkshopApp />;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<AppWrapper />);
+  </script>
+</body>
+</html>
