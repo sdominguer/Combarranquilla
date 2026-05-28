@@ -37,7 +37,7 @@ const { useState, useEffect, useCallback, useRef } = React;
 // ============================================================
 // ⚠️  CAMBIAR POR LA URL DEL APPS SCRIPT DE COMBARRANQUILLA
 // ============================================================
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzVdjk3Qwv_n-y6kJPGSQGf1GmCuP5yXENxFPvsgZzv-Fu7n5yNtQCxhHdutWYe-KR0/exec";
+const APPS_SCRIPT_URL = "TU_URL_DE_APPS_SCRIPT_AQUI";
 
 async function apiCall(action, params = {}) {
   const USE_LOCAL = !APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes("TU_URL");
@@ -1001,7 +1001,7 @@ function LoginScreen({ onLogin }) {
             )}
             {info && <div style={{ color: C.green, fontSize: 13, marginTop: 8, padding: "8px 12px", background: "#F0FFF4", borderRadius: 6 }}>{info}</div>}
             {error && <div style={{ color: C.red, fontSize: 13, marginTop: 8, padding: "8px 12px", background: "#FEF2F2", borderRadius: 6 }}>{error}</div>}
-            <button onClick={handleReset} disabled={loading} style={{ ...btnStyle(C.accent), width: "100%", padding: 14, fontSize: 16, marginTop: 16, opacity: loading ? 0.6 : 1 }}>{loading ? "..." : resetStep === 0 ? "📧 Enviar código" : "✅ Verificar"}</button>
+            <button onClick={handleReset} disabled={loading} style={{ ...btnStyle(C.accent), width: "100%", padding: 14, fontSize: 16, marginTop: 16, opacity: loading ? 0.6 : 1 }}>{loading ? "..." : resetStep === 0 ? "📧 Enviar código" : "🔑 Cambiar contraseña"}</button>
             <button onClick={() => { setMode("login"); setResetStep(0); setError(""); setInfo(""); }} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 13, marginTop: 12, width: "100%", textAlign: "center", fontFamily: "'Montserrat', sans-serif" }}>← Volver al login</button>
           </div>
         ) : (
